@@ -18,6 +18,10 @@ def main():
     else:
         se_loger = requests.get(URL_SE_LOGER)
 
+    soup = BeautifulSoup(se_loger.content)
+
+    print(soup.prettify())
+
 
 if __name__ == '__main__':
     main()
