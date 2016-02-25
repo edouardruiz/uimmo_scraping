@@ -1,3 +1,4 @@
+import os
 import requests
 
 from bs4 import BeautifulSoup
@@ -12,7 +13,10 @@ proxies = {
 
 
 def main():
-    se_loger = requests.get(URL_SE_LOGER, proxies=proxies)
+    if os.environ.get('USE_PROXY', True):
+        se_loger = requests.get(URL_SE_LOGER, proxies=proxies)
+    else:
+        se_loger = requests.get(URL_SE_LOGER)
 
 
 if __name__ == '__main__':
