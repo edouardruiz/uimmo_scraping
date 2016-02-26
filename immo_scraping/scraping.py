@@ -24,7 +24,7 @@ URL_SE_LOGER_SEARCH = "http://www.seloger.com/list.htm?ci=750116&idtt=2&idtypebi
 URL_SE_LOGER_SEARCH_WITH_PAGE = "http://www.seloger.com/list.htm?ci=750118&idtt=2&idtypebien=1&LISTING-LISTpg={page}"
 URL_SE_LOGER_AD = "http://www.seloger.com/annonces/achat/appartement/paris-18eme-75/la-chapelle-marx-dormoy/106474505.htm?cp=75018&idtt=2&org=advanced_search&bd=Li_LienAnn_1"
 
-PATH_EXPORT_FOLDER = "/Users/edouard/Downloads"
+PATH_EXPORT_FOLDER = "/Users/edouard/Documents/Projets/python/immo_scraping/output"
 
 PROXIES = {
   'http': 'http://{}:{}@proxy.int.world.socgen:8080',
@@ -53,42 +53,6 @@ class TypeRecherche(IntEnum):
     Achat = 2
 
 
-def build_article_json(article_page_content):
-    soup = BeautifulSoup(article_page_content)
-    print(soup)
-    return {
-        'title': ' '.join(soup.find('h1', 'detail-title').stripped_strings)
-    }
-
-
-async def fetch_one_article(article_url):
-    article_response = await aiohttp.request('GET', article_url)
-#    if article_response.
-    return build_article_json(article_response.read())
-
-
-async def build_flat_list(search_page_content):
-    soup = BeautifulSoup(search_page_content, 'html.parser')
-    articles_url = map(lambda article: article.a['href'], soup.body.find_all('article', 'listing'))
-    artciles_json = await fetch_one_article
-
-
-def build_search_pages_list():
-    search_pages_list = []
-    i = 1
-
-    print("Fetching page {}".format(i))
-    current_page = requests.get(URL_SE_LOGER_SEARCH_WITH_PAGE.format(page=i))
-
-    while current_page.status_code == 200 and i <= 1:
-        search_pages_list.append(current_page)
-        i += 1
-        print("Fetching page {}".format(i))
-        current_page = requests.get(URL_SE_LOGER_SEARCH_WITH_PAGE.format(page=i))
-
-    return search_pages_list
-
-
 def get_proxies():
     if sys.stdin.isatty():
         l = input('Login: ')
@@ -104,7 +68,7 @@ def get_proxies():
 
 
 async def build_one_annonce_dic(annonce_tag):
-    return {item.name: item.string if item.string is not None else item.contents for item in annonce_tag.find_all()}
+    return {item.name: item.string if item.string is not None else (item.contents if item.contents else '') for item in annonce_tag.find_all()}
 
 
 async def build_annonces_list(annonces_tag):
@@ -118,39 +82,37 @@ def build_url(**kwargs):
     return "{}?{}".format(WS_SE_LOGER_SEARCH, '&'.join("{}={}".format(k, ','.join(map(str, v)) if isinstance(v, collections.Iterable) else v) for k, v in kwargs.items()))
 
 
-async def dump_annonces(**kwargs):
+async def dump_annonces(session, **kwargs):
     res = []
     url = build_url(**kwargs)
     while url is not None:
         print(url)
-        async with aiohttp.get(url) as response:
+        async with session.get(url) as response:
             assert response.status == 200
             soup = BeautifulSoup(await response.text(), 'lxml')
-            # TODO: use page_max to generate the urls
+            # TODO: use page_max to generate the next urls after the first query
             page_max = soup.pagemax.string if soup.pagemax else None
             if soup.annonces is not None:
                 res.extend(await build_annonces_list(soup.annonces))
             url = soup.pagesuivante.string if soup.pagesuivante else None
     annonces_df = pd.DataFrame(res)
     if 'ci' in kwargs:
-        export_path = os.path.join(PATH_EXPORT_FOLDER, kwargs['ci'] if not isinstance(kwargs['ci'], collections.Iterable) else '_'.join(kwargs['ci']), '.xlsx')
-        annonces_df.to_excel(export_path)
+        file_name = str(kwargs['ci']) if not isinstance(kwargs['ci'], collections.Iterable) else '_'.join(kwargs['ci'])
+        annonces_df.to_excel(os.path.join(PATH_EXPORT_FOLDER, "{}.xlsx".format(file_name)))
+        annonces_df.to_pickle(os.path.join(PATH_EXPORT_FOLDER, "{}.pkl".format(file_name)))
+    return annonces_df
 
 
 def main():
-    # if os.environ.get('USE_PROXY', False) == 'True':
-    #     se_loger = requests.get(URL_SE_LOGER_SEARCH, proxies=get_proxies())
-    # else:
-    #     se_loger = requests.get(URL_SE_LOGER_SEARCH)
-
-    # search_pages_list = build_search_pages_list()
+    conn = aiohttp.ProxyConnector(proxy=get_proxies()['http']) if os.environ.get('USE_PROXY', False) == 'True' else None
 
     loop = asyncio.get_event_loop()
-    tasks = [
-        dump_annonces(idtt=TypeRecherche.Achat, ci=750118, idtypebien=TypeBien.Appartement, pxmin=1000000, pxmax=1200000),
-        # dump_annonces(idtt=2, ci=750118, idtypebien=1, pxmin=1000000, pxmax=1500000),
-    ]
-    loop.run_until_complete(asyncio.wait(tasks))
+    with aiohttp.ClientSession(loop=loop, connector=conn) as session:
+        tasks = [
+            dump_annonces(session, idtt=TypeRecherche.Achat, ci=750118, idtypebien=TypeBien.Appartement, pxmin=1000000, pxmax=1200000),
+            dump_annonces(session, idtt=TypeRecherche.Achat, ci=750119, idtypebien=TypeBien.Appartement, pxmin=1000000, pxmax=1200000),
+        ]
+        loop.run_until_complete(asyncio.wait(tasks))
     loop.close()
 
 
