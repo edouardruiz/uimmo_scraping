@@ -6,7 +6,6 @@ import sys
 import asyncio
 import aiohttp
 import getpass
-import requests
 import collections
 
 import pandas as pd
