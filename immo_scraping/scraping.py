@@ -30,6 +30,7 @@ PROXIES = {
   'https': 'http://{}:{}@proxy.int.world.socgen:8080',
 }
 
+LIMIT_CONNECTIONS = 10
 
 class TypeBien(IntEnum):
     Appartement = 1
@@ -103,7 +104,10 @@ async def dump_annonces(session, **kwargs):
 
 
 def main():
-    conn = aiohttp.ProxyConnector(proxy=get_proxies()['http']) if os.environ.get('USE_PROXY', False) == 'True' else None
+    if os.environ.get('USE_PROXY', False) == 'True':
+        conn = aiohttp.ProxyConnector(proxy=get_proxies()['http'], limit=LIMIT_CONNECTIONS)
+    else:
+        conn = aiohttp.TCPConnector(limit=LIMIT_CONNECTIONS)
 
     loop = asyncio.get_event_loop()
     with aiohttp.ClientSession(loop=loop, connector=conn) as session:
