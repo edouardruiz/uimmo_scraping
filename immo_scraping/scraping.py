@@ -95,14 +95,14 @@ async def dump_annonces(session, **kwargs):
         async with session.get(url) as response:
             assert response.status == 200
             soup = BeautifulSoup(await response.text(), 'lxml')
-            nb_trouvees = soup.nbTrouvees.string if soup.nbTrouvees else None
+            nb_trouvees = soup.nbtrouvees.string if soup.nbtrouvees else None
             if nb_trouvees and int(nb_trouvees) >= 1:
                 # TODO: use page_max to generate the next urls after the first query
                 page_max = soup.pagemax.string if soup.pagemax else None
                 if soup.annonces is not None:
                     res.extend(await build_annonces_list(soup.annonces))
             url = soup.pagesuivante.string if soup.pagesuivante else None
-    return kwargs['ci'] if 'ci' in kwargs else 0, pd.DataFrame(res)
+    return (kwargs['ci'] if 'ci' in kwargs else 0, pd.DataFrame(res))
 
 
 def get_insee_codes(departements, insee_path):
@@ -125,10 +125,10 @@ def get_insee_codes(departements, insee_path):
         return map(convert_insee_code_to_ci, res)
 
 
-def print_ci_annonces_df_tuples(ci_annonces_df_tuples, path_export_folder=PATH_EXPORT_FOLDER):
+def print_ci_annonces_df_tuples(tasks_done, path_export_folder=PATH_EXPORT_FOLDER):
     res = {}
-    for ci, ci_annonces_df_tuples_group in itertools.groupby(ci_annonces_df_tuples, lambda t: t[0]):
-        annonces_df = pd.concat([df for k, df in ci_annonces_df_tuples_group], axis=0, ignore_index=True)
+    for ci, task_group in itertools.groupby(tasks_done, lambda td: td.result()[0]):
+        annonces_df = pd.concat([task.result()[1] for task in task_group], axis=0, ignore_index=True)
         if not annonces_df.empty:
             annonces_df.to_excel(os.path.join(path_export_folder, "{}.xlsx".format(str(ci))))
             # annonces_df.to_pickle(os.path.join(PATH_EXPORT_FOLDER, "{}.pkl".format(file_name)))
@@ -143,14 +143,18 @@ def main():
         conn = aiohttp.TCPConnector(limit=LIMIT_CONNECTIONS)
 
     insee_codes = get_insee_codes([75], os.path.join(os.path.dirname(__file__), '../input/correspondances-code-insee-code-postal.json'))
+    # TODO: remove test values
+    insee_codes = [750101]
+    nb_rooms = range(1, 3)
 
     loop = asyncio.get_event_loop()
     with aiohttp.ClientSession(loop=loop, connector=conn) as session:
-        def dump_annonces_ci(insee_code):
-            return dump_annonces(session, ci=insee_code, idtt=TypeRecherche.Achat, idtypebien=TypeBien.Appartement)
-        tasks = map(dump_annonces_ci, insee_codes)
-        ci_annonces_df_tuples = loop.run_until_complete(asyncio.wait(tasks))
-        annonces_df_dic = print_ci_annonces_df_tuples(ci_annonces_df_tuples)
+        def dump_annonces_ci(t):
+            insee_code, nb_room = t
+            return dump_annonces(session, ci=insee_code, nb_pieces=nb_room, idtt=TypeRecherche.Achat, idtypebien=TypeBien.Appartement)
+        tasks = map(dump_annonces_ci, itertools.product(insee_codes, nb_rooms))
+        tasks_done, _ = loop.run_until_complete(asyncio.wait(tasks))
+        annonces_df_dic = print_ci_annonces_df_tuples(tasks_done)
         print("annonces_df_dic contains {} df".format(len(annonces_df_dic)))
     loop.close()
 
