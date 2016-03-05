@@ -34,7 +34,7 @@ PROXIES = {
   'https': 'http://{}:{}@proxy.int.world.socgen:8080',
 }
 
-LIMIT_CONNECTIONS = 10
+LIMIT_CONNECTIONS = 20
 
 
 class TypeBien(IntEnum):
@@ -212,6 +212,8 @@ def main():
         tasks_done, _ = loop.run_until_complete(asyncio.wait(tasks))
         annonces_df_dic = print_ci_annonces_df_tuples(tasks_done)
         print("annonces_df_dic contains {} df".format(len(annonces_df_dic)))
+        full_df = pd.concat(annonces_df_dic.values(), axis=0, ignore_index=True)
+        full_df.to_excel(os.path.join(PATH_EXPORT_FOLDER, "full_export.xlsx"))
     loop.close()
 
 
