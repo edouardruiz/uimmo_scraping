@@ -91,18 +91,25 @@ async def dump_annonces(session, **kwargs):
     res = []
     url = build_url(**kwargs)
     while url is not None:
-        print(url)
         async with session.get(url) as response:
             assert response.status == 200
             soup = BeautifulSoup(await response.text(), 'lxml')
-            nb_trouvees = soup.nbtrouvees.string if soup.nbtrouvees else None
-            if nb_trouvees and int(nb_trouvees) >= 1:
+            nb_found = soup.nbtrouvees.string if soup.nbtrouvees else None
+            if nb_found and int(nb_found) >= 1:
+                if int(nb_found) > 200:
+                    print("Warning: can't fetch all items for {}".format(url))
                 # TODO: use page_max to generate the next urls after the first query
                 page_max = soup.pagemax.string if soup.pagemax else None
+                page_cur = soup.pagecourante.string if soup.pagecourante else None
+                if page_cur:
+                    nb_found_curr = int(nb_found) - (int(page_cur) - 1) * 50 if page_cur == page_max else 50
+                else:
+                    nb_found_curr = int(nb_found)
+                print("Info: {} items found for url {}".format(nb_found_curr, url))
                 if soup.annonces is not None:
                     res.extend(await build_annonces_list(soup.annonces))
             url = soup.pagesuivante.string if soup.pagesuivante else None
-    return (kwargs['ci'] if 'ci' in kwargs else 0, pd.DataFrame(res))
+    return kwargs['ci'] if 'ci' in kwargs else 0, pd.DataFrame(res)
 
 
 def get_insee_codes(departements, insee_path):
@@ -146,17 +153,21 @@ def main():
     else:
         conn = aiohttp.TCPConnector(limit=LIMIT_CONNECTIONS)
 
-    insee_codes = get_insee_codes([75, 77, 78, 91, 92, 93, 94, 95], os.path.join(os.path.dirname(__file__), '../input/correspondances-code-insee-code-postal.json'))
+    # insee_codes = get_insee_codes([75, 77, 78, 91, 92, 93, 94, 95], os.path.join(os.path.dirname(__file__), '../input/correspondances-code-insee-code-postal.json'))
+    insee_codes = get_insee_codes([75], os.path.join(os.path.dirname(__file__), '../input/correspondances-code-insee-code-postal.json'))
     # TODO: remove test values
-    # insee_codes = [750101, 750111]
-    nb_rooms = range(1, 25)
+    prices = list(range(0, 4000000, 100000))
+    min_max_prices = [prices[i:i+2] for i in range(len(prices))]
 
     loop = asyncio.get_event_loop()
     with aiohttp.ClientSession(loop=loop, connector=conn) as session:
         def dump_annonces_ci(t):
-            insee_code, nb_room = t
-            return dump_annonces(session, ci=insee_code, nb_pieces=nb_room, idtt=TypeRecherche.Achat, idtypebien=TypeBien.Appartement)
-        tasks = map(dump_annonces_ci, itertools.product(insee_codes, nb_rooms))
+            insee_code, min_max = t
+            if len(min_max) > 1:
+                return dump_annonces(session, ci=insee_code, pxmin=min_max[0], pxmax=min_max[1], idtt=TypeRecherche.Achat, idtypebien=TypeBien.Appartement)
+            else:
+                return dump_annonces(session, ci=insee_code, pxmin=min_max[0], idtt=TypeRecherche.Achat, idtypebien=TypeBien.Appartement)
+        tasks = map(dump_annonces_ci, itertools.product(insee_codes, min_max_prices))
         tasks_done, _ = loop.run_until_complete(asyncio.wait(tasks))
         annonces_df_dic = print_ci_annonces_df_tuples(tasks_done)
         print("annonces_df_dic contains {} df".format(len(annonces_df_dic)))
