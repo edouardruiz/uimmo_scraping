@@ -34,7 +34,7 @@ PROXIES = {
   'https': 'http://{}:{}@proxy.int.world.socgen:8080',
 }
 
-LIMIT_CONNECTIONS = 20
+LIMIT_CONNECTIONS = 40
 
 
 class TypeBien(IntEnum):
