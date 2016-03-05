@@ -126,12 +126,16 @@ def get_insee_codes(departements, insee_path):
 
 
 def print_ci_annonces_df_tuples(tasks_done, path_export_folder=PATH_EXPORT_FOLDER):
+    def tuple_key(t):
+        return t[0]
     res = {}
-    for ci, task_group in itertools.groupby(tasks_done, lambda td: td.result()[0]):
-        annonces_df = pd.concat([task.result()[1] for task in task_group], axis=0, ignore_index=True)
+    tuples_results = [t.result() for t in tasks_done]
+    tuples_results = sorted(tuples_results, key=tuple_key)
+    for ci, tuples_group in itertools.groupby(tuples_results, tuple_key):
+        annonces_df = pd.concat([t[1] for t in tuples_group], axis=0, ignore_index=True)
         if not annonces_df.empty:
             annonces_df.to_excel(os.path.join(path_export_folder, "{}.xlsx".format(str(ci))))
-            # annonces_df.to_pickle(os.path.join(PATH_EXPORT_FOLDER, "{}.pkl".format(file_name)))
+            # annonces_df.to_pickle(os.path.join(path_export_folder, "{}.pkl".format(str(ci))))
             res[ci] = annonces_df
     return res
 
@@ -142,10 +146,10 @@ def main():
     else:
         conn = aiohttp.TCPConnector(limit=LIMIT_CONNECTIONS)
 
-    insee_codes = get_insee_codes([75], os.path.join(os.path.dirname(__file__), '../input/correspondances-code-insee-code-postal.json'))
+    insee_codes = get_insee_codes([75, 77, 78, 91, 92, 93, 94, 95], os.path.join(os.path.dirname(__file__), '../input/correspondances-code-insee-code-postal.json'))
     # TODO: remove test values
-    insee_codes = [750101]
-    nb_rooms = range(1, 3)
+    # insee_codes = [750101, 750111]
+    nb_rooms = range(1, 25)
 
     loop = asyncio.get_event_loop()
     with aiohttp.ClientSession(loop=loop, connector=conn) as session:
